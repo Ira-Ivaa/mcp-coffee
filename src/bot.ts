@@ -58,6 +58,34 @@ function getHistory(chatId: number): ChatCompletionMessageParam[] {
   return h;
 }
 
+// Сколько последних «ходов» гостя держим в истории.
+// Ход = сообщение user + ответы модели и инструментов до следующего user.
+const MAX_TURNS = 8;
+
+// ── Управление окном контекста ──
+// Обрезаем историю по границам ходов, сохраняя инварианты tool-use:
+//   1) системное сообщение (индекс 0) остаётся всегда;
+//   2) окно всегда начинается с сообщения user — поэтому ни одно
+//      tool-сообщение не «осиротеет» (не останется без своего
+//      assistant с tool_calls), и OpenAI не вернёт ошибку 400.
+// Мутирует массив на месте (это тот же объект, что лежит в Map).
+function trimHistory(
+  history: ChatCompletionMessageParam[],
+  maxTurns: number
+): void {
+  // индексы начала ходов (сообщения user), не считая системное
+  const userIdx: number[] = [];
+  for (let i = 1; i < history.length; i++) {
+    if (history[i].role === "user") userIdx.push(i);
+  }
+  if (userIdx.length <= maxTurns) return; // обрезать нечего
+
+  // начало окна = первый user-ход, который оставляем
+  const cut = userIdx[userIdx.length - maxTurns];
+  const removed = history.splice(1, cut - 1).length; // храним system (0)
+  console.log(`[context] обрезано ${removed} старых сообщений, осталось ${history.length}`);
+}
+
 // ──────────────────────────────────────────────────────────────
 //  РУЧНАЯ ПЕТЛЯ tool-use — ядро всего проекта.
 //  1) спрашиваем модель;
@@ -72,6 +100,10 @@ async function runAgent(
   userText: string
 ): Promise<string> {
   history.push({ role: "user", content: userText });
+
+  // Обрезаем контекст на границе хода: сейчас новый user — последний,
+  // а активная пара assistant/tool этого хода ещё не добавлена.
+  trimHistory(history, MAX_TURNS);
 
   const MAX_STEPS = 6; // защита от бесконечного цикла
   for (let step = 0; step < MAX_STEPS; step++) {

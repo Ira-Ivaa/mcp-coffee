@@ -5,7 +5,57 @@ import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
-import { readMenu, createOrder, getOrder, type OrderItem } from "./excel.js";
+import {
+  readMenu,
+  createOrder,
+  getOrder,
+  type OrderItem,
+  type MenuItem,
+} from "./excel.js";
+
+// ────────────────────────────────────────────────────────────
+//  Поиск по составу (retrieval): LLM присылает ключевое слово
+//  («арбуз»), а мы находим напитки, у которых оно есть в составе
+//  или названии — этих данных у модели в контексте нет.
+// ────────────────────────────────────────────────────────────
+
+// нормализация: нижний регистр + ё→е
+function norm(s: string): string {
+  return s.toLowerCase().replace(/ё/g, "е");
+}
+
+// разбиваем строку на слова (буквы/цифры)
+function tokenize(s: string): string[] {
+  return norm(s)
+    .split(/[^a-zа-я0-9]+/i)
+    .filter((t) => t.length > 0);
+}
+
+// токен запроса совпадает со словом, если одно — префикс другого
+// (общая часть от 3 символов): "кокос" ~ "кокосовый", "арбуз" ~ "арбузный"
+function tokenMatch(q: string, w: string): boolean {
+  if (Math.min(q.length, w.length) < 3) return q === w;
+  return w.startsWith(q) || q.startsWith(w);
+}
+
+// Ранжируем меню по запросу: сколько слов запроса нашли в
+// «название + состав». Возвращаем только напитки со счётом > 0.
+function searchMenu(menu: MenuItem[], query: string): MenuItem[] {
+  const qTokens = tokenize(query);
+  if (qTokens.length === 0) return [];
+
+  const scored = menu.map((item) => {
+    const words = tokenize(`${item.drink} ${item.composition}`);
+    const score = qTokens.filter((q) => words.some((w) => tokenMatch(q, w)))
+      .length;
+    return { item, score };
+  });
+
+  return scored
+    .filter((s) => s.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .map((s) => s.item);
+}
 
 // ────────────────────────────────────────────────────────────
 //  Часть 1: сборка сервера и инструментов
@@ -37,6 +87,46 @@ function buildServer(): McpServer {
         return {
           isError: true,
           content: [{ type: "text", text: `Ошибка чтения меню: ${String(e)}` }],
+        };
+      }
+    }
+  );
+
+  // ── search_menu: поиск напитков по составу/вкусу ──
+  server.registerTool(
+    "search_menu",
+    {
+      title: "Search menu by ingredient",
+      description:
+        "Searches drinks by ingredient or flavor and returns the matching ones with their composition. " +
+        "Use it when the guest asks for a flavor rather than a name (e.g. 'something with coconut'). " +
+        "Pass a single ingredient keyword in its base form, e.g. 'кокос', 'арбуз', 'миндаль', 'ваниль'.",
+      inputSchema: {
+        query: z
+          .string()
+          .min(2)
+          .describe("ingredient or flavor keyword in base form, e.g. 'кокос'"),
+      },
+    },
+    async ({ query }: { query: string }) => {
+      try {
+        const menu = await readMenu();
+        const found = searchMenu(menu, query);
+        if (found.length === 0) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `По запросу «${query}» ничего не найдено.`,
+              },
+            ],
+          };
+        }
+        return { content: [{ type: "text", text: JSON.stringify(found) }] };
+      } catch (e) {
+        return {
+          isError: true,
+          content: [{ type: "text", text: `Ошибка поиска: ${String(e)}` }],
         };
       }
     }

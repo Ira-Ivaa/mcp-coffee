@@ -16,6 +16,7 @@ export type MenuItem = {
   drink: string; // название напитка, как в меню
   price: number; // цена
   minutes: number; // время приготовления одной порции, мин
+  composition: string; // состав (ингредиенты), для поиска по составу
 };
 
 export type OrderItem = {
@@ -48,7 +49,8 @@ export async function readMenu(): Promise<MenuItem[]> {
     if (!drink) return; // пропускаем пустые строки
     const price = Number(row.getCell(2).value ?? 0);
     const minutes = Number(row.getCell(3).value ?? 0);
-    menu.push({ drink, price, minutes });
+    const composition = String(row.getCell(4).value ?? "").trim();
+    menu.push({ drink, price, minutes, composition });
   });
   return menu;
 }

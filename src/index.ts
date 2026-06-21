@@ -12,6 +12,7 @@ import {
   type OrderItem,
   type MenuItem,
 } from "./excel.js";
+import { config } from "./config.js";
 
 // ────────────────────────────────────────────────────────────
 //  Поиск по составу (retrieval): LLM присылает ключевое слово
@@ -34,7 +35,7 @@ function tokenize(s: string): string[] {
 // токен запроса совпадает со словом, если одно — префикс другого
 // (общая часть от 3 символов): "кокос" ~ "кокосовый", "арбуз" ~ "арбузный"
 function tokenMatch(q: string, w: string): boolean {
-  if (Math.min(q.length, w.length) < 3) return q === w;
+  if (Math.min(q.length, w.length) < config.minMatchLen) return q === w;
   return w.startsWith(q) || q.startsWith(w);
 }
 
@@ -316,7 +317,6 @@ async function handleSessionRequest(req: Request, res: Response) {
 app.get("/mcp", handleSessionRequest);
 app.delete("/mcp", handleSessionRequest);
 
-const PORT = 3000;
-app.listen(PORT, () => {
-  console.log(`MCP-сервер кофейни слушает http://localhost:${PORT}/mcp`);
+app.listen(config.port, () => {
+  console.log(`MCP-сервер кофейни слушает http://localhost:${config.port}/mcp`);
 });

@@ -8,14 +8,9 @@ import type {
   ChatCompletionTool,
 } from "openai/resources/chat/completions";
 import { McpClient } from "./mcpClient.js";
+import { config } from "./config.js";
 
-// ── Конфигурация из .env ──
-const {
-  OPENAI_API_KEY,
-  TELEGRAM_BOT_TOKEN,
-  OPENAI_MODEL = "gpt-4o-mini",
-  MCP_URL = "http://localhost:3000/mcp",
-} = process.env;
+const { OPENAI_API_KEY, TELEGRAM_BOT_TOKEN } = process.env;
 
 if (!OPENAI_API_KEY) throw new Error("Нет OPENAI_API_KEY в .env");
 if (!TELEGRAM_BOT_TOKEN) throw new Error("Нет TELEGRAM_BOT_TOKEN в .env");
@@ -59,10 +54,6 @@ function getHistory(chatId: number): ChatCompletionMessageParam[] {
   return h;
 }
 
-// Сколько последних «ходов» гостя держим в истории.
-// Ход = сообщение user + ответы модели и инструментов до следующего user.
-const MAX_TURNS = 8;
-
 // ── Управление окном контекста ──
 // Обрезаем историю по границам ходов, сохраняя инварианты tool-use:
 //   1) системное сообщение (индекс 0) остаётся всегда;
@@ -104,12 +95,11 @@ async function runAgent(
 
   // Обрезаем контекст на границе хода: сейчас новый user — последний,
   // а активная пара assistant/tool этого хода ещё не добавлена.
-  trimHistory(history, MAX_TURNS);
+  trimHistory(history, config.maxTurns);
 
-  const MAX_STEPS = 6; // защита от бесконечного цикла
-  for (let step = 0; step < MAX_STEPS; step++) {
+  for (let step = 0; step < config.maxSteps; step++) {
     const completion = await openai.chat.completions.create({
-      model: OPENAI_MODEL,
+      model: config.openaiModel,
       messages: history,
       tools,
     });
@@ -147,10 +137,10 @@ async function runAgent(
 
 // ── Запуск ──
 async function main() {
-  const mcp = await McpClient.connect(MCP_URL);
+  const mcp = await McpClient.connect(config.mcpUrl);
   const tools = toOpenAITools(await mcp.listTools());
   console.log(
-    `Подключился к MCP (${MCP_URL}), инструментов: ${tools.length}`
+    `Подключился к MCP (${config.mcpUrl}), инструментов: ${tools.length}`
   );
 
   const bot = new Telegraf(TELEGRAM_BOT_TOKEN!);

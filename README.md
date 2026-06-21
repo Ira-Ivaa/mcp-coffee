@@ -123,6 +123,7 @@ src/
 ├── index.ts      MCP-сервер: инструменты + HTTP-транспорт
 ├── excel.ts      слой хранения (ExcelJS)
 ├── mcpClient.ts  MCP-клиент
+├── config.ts     настройки в одном месте (модель, порт, лимиты)
 └── bot.ts        Telegram + OpenAI + ручная петля tool use
 data/
 └── menu.xlsx     меню (напиток | цена | время_приготовления_мин | состав)

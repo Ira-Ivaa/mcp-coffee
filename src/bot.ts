@@ -7,8 +7,9 @@ import type {
   ChatCompletionMessageParam,
   ChatCompletionTool,
 } from "openai/resources/chat/completions";
-import { McpClient } from "./mcpClient.js";
+import { McpClient } from "./infra/mcpClient.js";
 import { config } from "./config.js";
+import { trimHistory } from "./domain/history.js";
 
 const { OPENAI_API_KEY, TELEGRAM_BOT_TOKEN } = process.env;
 
@@ -53,30 +54,6 @@ function getHistory(chatId: number): ChatCompletionMessageParam[] {
     histories.set(chatId, h);
   }
   return h;
-}
-
-// ── Управление окном контекста ──
-// Обрезаем историю по границам ходов, сохраняя инварианты tool-use:
-//   1) системное сообщение (индекс 0) остаётся всегда;
-//   2) окно всегда начинается с сообщения user — поэтому ни одно
-//      tool-сообщение не «осиротеет» (не останется без своего
-//      assistant с tool_calls), и OpenAI не вернёт ошибку 400.
-// Мутирует массив на месте (это тот же объект, что лежит в Map).
-function trimHistory(
-  history: ChatCompletionMessageParam[],
-  maxTurns: number
-): void {
-  // индексы начала ходов (сообщения user), не считая системное
-  const userIdx: number[] = [];
-  for (let i = 1; i < history.length; i++) {
-    if (history[i].role === "user") userIdx.push(i);
-  }
-  if (userIdx.length <= maxTurns) return; // обрезать нечего
-
-  // начало окна = первый user-ход, который оставляем
-  const cut = userIdx[userIdx.length - maxTurns];
-  const removed = history.splice(1, cut - 1).length; // храним system (0)
-  console.log(`[context] обрезано ${removed} старых сообщений, осталось ${history.length}`);
 }
 
 // ──────────────────────────────────────────────────────────────

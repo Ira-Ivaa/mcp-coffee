@@ -82,12 +82,12 @@ async function loadOrdersWorkbook(): Promise<{
 }
 
 // Превращает [{drink:"капучино",qty:2}] в строку "капучино x2; латте x1"
-function itemsToText(items: OrderItem[]): string {
+export function itemsToText(items: OrderItem[]): string {
   return items.map((i) => `${i.drink} x${i.qty}`).join("; ");
 }
 
 // Обратно: строку "капучино x2; латте x1" в массив объектов
-function textToItems(text: string): OrderItem[] {
+export function textToItems(text: string): OrderItem[] {
   return text
     .split(";")
     .map((part) => part.trim())

@@ -5,58 +5,10 @@ import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
-import {
-  readMenu,
-  createOrder,
-  getOrder,
-  type OrderItem,
-  type MenuItem,
-} from "./excel.js";
+import { readMenu, createOrder, getOrder, type OrderItem } from "./infra/excel.js";
 import { config } from "./config.js";
-
-// ────────────────────────────────────────────────────────────
-//  Поиск по составу (retrieval): LLM присылает ключевое слово
-//  («арбуз»), а мы находим напитки, у которых оно есть в составе
-//  или названии — этих данных у модели в контексте нет.
-// ────────────────────────────────────────────────────────────
-
-// нормализация: нижний регистр + ё→е
-function norm(s: string): string {
-  return s.toLowerCase().replace(/ё/g, "е");
-}
-
-// разбиваем строку на слова (буквы/цифры)
-function tokenize(s: string): string[] {
-  return norm(s)
-    .split(/[^a-zа-я0-9]+/i)
-    .filter((t) => t.length > 0);
-}
-
-// токен запроса совпадает со словом, если одно — префикс другого
-// (общая часть от 3 символов): "кокос" ~ "кокосовый", "арбуз" ~ "арбузный"
-function tokenMatch(q: string, w: string): boolean {
-  if (Math.min(q.length, w.length) < config.minMatchLen) return q === w;
-  return w.startsWith(q) || q.startsWith(w);
-}
-
-// Ранжируем меню по запросу: сколько слов запроса нашли в
-// «название + состав». Возвращаем только напитки со счётом > 0.
-function searchMenu(menu: MenuItem[], query: string): MenuItem[] {
-  const qTokens = tokenize(query);
-  if (qTokens.length === 0) return [];
-
-  const scored = menu.map((item) => {
-    const words = tokenize(`${item.drink} ${item.composition}`);
-    const score = qTokens.filter((q) => words.some((w) => tokenMatch(q, w)))
-      .length;
-    return { item, score };
-  });
-
-  return scored
-    .filter((s) => s.score > 0)
-    .sort((a, b) => b.score - a.score)
-    .map((s) => s.item);
-}
+import { searchMenu } from "./domain/search.js";
+import { priceOrder, orderTotalQty } from "./domain/orders.js";
 
 // ────────────────────────────────────────────────────────────
 //  Часть 1: сборка сервера и инструментов
@@ -161,7 +113,7 @@ function buildServer(): McpServer {
     async ({ items }: { items: OrderItem[] }) => {
       try {
         // Лимит на размер заказа (сервер enforce-ит независимо от модели).
-        const totalQty = items.reduce((sum, it) => sum + it.qty, 0);
+        const totalQty = orderTotalQty(items);
         if (totalQty > config.maxDrinksPerOrder) {
           return {
             isError: true,
@@ -176,29 +128,23 @@ function buildServer(): McpServer {
 
         const menu = await readMenu();
 
-        // Бизнес-логика: проверяем напитки и считаем общее время (сумма).
-        let totalMinutes = 0;
-        for (const it of items) {
-          const m = menu.find(
-            (x) => x.drink.toLowerCase() === it.drink.toLowerCase()
-          );
-          if (!m) {
-            return {
-              isError: true,
-              content: [
-                {
-                  type: "text",
-                  text: `Напитка «${it.drink}» нет в меню. Доступно: ${menu
-                    .map((x) => x.drink)
-                    .join(", ")}.`,
-                },
-              ],
-            };
-          }
-          totalMinutes += m.minutes * it.qty;
+        // Проверяем напитки и считаем общее время (чистая логика в orders.ts).
+        const priced = priceOrder(items, menu);
+        if (!priced.ok) {
+          return {
+            isError: true,
+            content: [
+              {
+                type: "text",
+                text: `Напитка «${priced.missingDrink}» нет в меню. Доступно: ${menu
+                  .map((x) => x.drink)
+                  .join(", ")}.`,
+              },
+            ],
+          };
         }
 
-        const order = await createOrder(items, totalMinutes);
+        const order = await createOrder(items, priced.totalMinutes);
         return {
           content: [
             {

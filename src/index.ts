@@ -140,7 +140,8 @@ function buildServer(): McpServer {
       title: "Create order",
       description:
         "Saves an order and returns its number (id) and the total preparation time in minutes. " +
-        "items is an array of positions; drink names must come from the menu (see get_menu).",
+        "items is an array of positions; drink names must come from the menu (see get_menu). " +
+        `At most ${config.maxDrinksPerOrder} drinks in total per order.`,
       inputSchema: {
         items: z
           .array(
@@ -159,6 +160,20 @@ function buildServer(): McpServer {
     },
     async ({ items }: { items: OrderItem[] }) => {
       try {
+        // Лимит на размер заказа (сервер enforce-ит независимо от модели).
+        const totalQty = items.reduce((sum, it) => sum + it.qty, 0);
+        if (totalQty > config.maxDrinksPerOrder) {
+          return {
+            isError: true,
+            content: [
+              {
+                type: "text",
+                text: `Слишком большой заказ: ${totalQty} напитков. Максимум ${config.maxDrinksPerOrder} за один заказ.`,
+              },
+            ],
+          };
+        }
+
         const menu = await readMenu();
 
         // Бизнес-логика: проверяем напитки и считаем общее время (сумма).

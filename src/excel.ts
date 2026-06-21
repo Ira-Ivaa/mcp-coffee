@@ -13,23 +13,23 @@ const ORDERS_PATH = path.join(DATA_DIR, "orders.xlsx");
 // ---- Типы, которыми оперирует остальной код ----
 
 export type MenuItem = {
-  drink: string; // название напитка, как в меню
-  price: number; // цена
-  minutes: number; // время приготовления одной порции, мин
-  composition: string; // состав (ингредиенты), для поиска по составу
+  drink: string;
+  price: number;
+  minutes: number;
+  composition: string;
 };
 
 export type OrderItem = {
-  drink: string; // название напитка
-  qty: number; // количество
+  drink: string;
+  qty: number;
 };
 
 export type Order = {
   id: number;
-  items: OrderItem[]; // что заказали
-  totalMinutes: number; // суммарное время готовности
-  createdAt: string; // ISO-время создания
-  status: string; // "принят" | "готовится" | "готов"
+  items: OrderItem[];
+  totalMinutes: number;
+  createdAt: string;
+  status: string;
 };
 
 // ---- Чтение меню ----

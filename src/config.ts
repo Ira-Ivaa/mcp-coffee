@@ -10,4 +10,6 @@ export const config = {
   maxSteps: 6,
 
   minMatchLen: 3,
+
+  maxDrinksPerOrder: 100,
 } as const;
